@@ -3252,6 +3252,8 @@ name = "strata-term"
 version = "0.0.0"
 dependencies = [
  "libghostty-vt",
+ "rustix",
+ "tempfile",
 ]
 
 [[package]]

@@ -16,3 +16,7 @@ workspace = true
 # pre-1.0 Ghostty whose C API is incompatible. `pkg-config` links the library
 # Nix builds from the pinned Ghostty source instead of cloning it in build.rs.
 libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs", rev = "4466c0f45f51f964f86d1974a50502dbec7cb0de", features = ["pkg-config"] }
+rustix = { workspace = true, features = ["pty", "termios"] }
+
+[dev-dependencies]
+tempfile.workspace = true
