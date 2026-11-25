@@ -32,6 +32,21 @@ pub struct ShellOptions {
 }
 
 impl ShellOptions {
+    /// Options that use the installed Ghostty's shell integration and
+    /// terminfo, when Ghostty is found.
+    #[must_use]
+    pub fn with_installed_ghostty() -> Self {
+        let ghostty_resources = crate::ghostty::resources_dir();
+        let terminfo = ghostty_resources
+            .as_deref()
+            .and_then(crate::ghostty::terminfo_dir);
+        Self {
+            ghostty_resources,
+            terminfo,
+            ..Self::default()
+        }
+    }
+
     /// The `TERM` the session will report.
     #[must_use]
     pub fn term(&self) -> &'static str {

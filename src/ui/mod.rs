@@ -56,6 +56,7 @@ mod table_view;
 mod tabs_session;
 mod tenxer_mode;
 mod terminal;
+pub(crate) mod terminal_pane;
 mod theme;
 mod thumbnail;
 pub(crate) use crate::adapters::thumbnail_cache;

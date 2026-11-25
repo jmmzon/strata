@@ -262,7 +262,10 @@ fn splits_rows_into_styled_runs() {
         .iter()
         .map(|run| (run.col, run.cells, run.text.as_str()))
         .collect();
-    assert_eq!(texts, [(0, 3, "red"), (3, 4, " 漢x")]);
+    assert_eq!(
+        texts,
+        [(0, 3, "red"), (3, 1, " "), (4, 2, "漢"), (6, 1, "x")]
+    );
     assert!(runs[0].style.bold && !runs[1].style.bold);
     assert_ne!(runs[0].style.fg, frame.foreground);
     assert_eq!(runs[1].style.fg, frame.foreground);
@@ -314,4 +317,103 @@ fn keeps_row_versions_until_their_content_changes() {
     assert_eq!(frame.rows[0].id, before[1].0);
     assert_eq!(frame.rows[0].version, edited);
     assert_eq!(frame.rows[0].runs[0].text, "two");
+}
+
+#[test]
+fn draws_default_text_in_the_chosen_colors() {
+    let mut session = Session::spawn(&sh("printf plain; read l"), SIZE).expect("spawn");
+    let colors = DefaultColors {
+        foreground: Some(Rgb { r: 1, g: 2, b: 3 }),
+        background: Some(Rgb {
+            r: 250,
+            g: 250,
+            b: 240,
+        }),
+        ..DefaultColors::default()
+    };
+    session.set_default_colors(&colors).expect("colors");
+    pump_until(&mut session, |text| text.contains("plain"));
+    let (frame, _) = session.frame().expect("frame");
+    assert_eq!(frame.rows[0].runs[0].style.fg, Rgb { r: 1, g: 2, b: 3 });
+    assert_eq!(
+        frame.background,
+        Rgb {
+            r: 250,
+            g: 250,
+            b: 240
+        }
+    );
+}
+
+#[test]
+fn scrolls_the_viewport_through_the_scrollback() {
+    let mut terminal = Terminal::new(20, 3).expect("terminal");
+    let mut builder = FrameBuilder::new().expect("builder");
+    let mut frame = Frame::default();
+    frame_of(
+        &mut terminal,
+        &mut builder,
+        &mut frame,
+        b"a\r\nb\r\nc\r\nd\r\ne",
+    );
+    terminal
+        .scroll_viewport(ScrollViewport::Top)
+        .expect("scroll");
+    builder.update(&terminal, &mut frame).expect("frame");
+    let top: Vec<_> = frame
+        .rows
+        .iter()
+        .map(|row| row.runs[0].text.as_str())
+        .collect();
+    assert_eq!(top, ["a", "b", "c"]);
+    assert!(frame.cursor.is_none(), "the cursor is below the viewport");
+}
+
+const THEME: &str = "palette = 1=#ba1a1a\npalette = 15 = #1e1c13\nbackground = #fff9ed\n";
+
+#[test]
+fn reads_the_palette_and_font_from_the_ghostty_config() {
+    let cases: [(&str, bool, Option<Rgb>); 4] = [
+        (
+            "theme = noctalia\n",
+            true,
+            Some(Rgb {
+                r: 0xba,
+                g: 0x1a,
+                b: 0x1a,
+            }),
+        ),
+        (
+            "theme = light:noctalia,dark:other\n",
+            false,
+            Some(Rgb {
+                r: 0xba,
+                g: 0x1a,
+                b: 0x1a,
+            }),
+        ),
+        ("theme = light:noctalia,dark:other\n", true, None),
+        (
+            "theme = noctalia\npalette = 1=#00ff00\n",
+            true,
+            Some(Rgb {
+                r: 0,
+                g: 0xff,
+                b: 0,
+            }),
+        ),
+    ];
+    for (config, dark, red) in cases {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("themes")).expect("themes");
+        std::fs::write(dir.path().join("themes/noctalia"), THEME).expect("theme");
+        let config = format!(
+            "# comment\nfont-family = \"Xenon Code\"\nfont-family = Noto Sans Mono\nfont-size = 13.5\n{config}"
+        );
+        std::fs::write(dir.path().join("config.ghostty"), config).expect("config");
+        let look = ghostty::read_look(dir.path(), None, dark);
+        assert_eq!(look.palette.map(|palette| palette.0[1]), red, "{dark}");
+        assert_eq!(look.font_family.as_deref(), Some("Xenon Code"));
+        assert_eq!(look.font_size, Some(13.5));
+    }
 }

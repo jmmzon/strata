@@ -10,6 +10,7 @@ pub use libghostty_vt::Terminal;
 
 mod error;
 mod frame;
+pub mod ghostty;
 mod osc7;
 mod pty;
 mod session;
@@ -17,11 +18,13 @@ mod shell;
 
 pub use error::Error;
 pub use frame::{Frame, FrameCursor, FrameRow, Run, RunStyle};
-pub use libghostty_vt::color::Rgb;
+pub use ghostty::GhosttyLook;
+pub use libghostty_vt::color::{Palette, Rgb};
 pub use libghostty_vt::render::RowId;
 pub use libghostty_vt::style::Underline;
 pub use libghostty_vt::terminal::CursorStyle;
-pub use session::{Events, Pumped, Session};
+pub use libghostty_vt::terminal::ScrollViewport;
+pub use session::{DefaultColors, Events, Pumped, Scrollbar, Session};
 pub use shell::{ShellOptions, TERM_FALLBACK, TERM_GHOSTTY};
 
 #[cfg(test)]

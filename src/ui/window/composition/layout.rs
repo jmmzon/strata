@@ -244,9 +244,36 @@ pub(super) fn browser_layout(
         gtk::PackType::End,
         OriginClick::keeps_selection_within(&preview.pane_widget()),
     );
-    root.append(&preview_split);
+    if crate::ui::terminal_pane::enabled() {
+        root.append(&terminal_split(&preview_split, browser));
+    } else {
+        root.append(&preview_split);
+    }
     root
 }
+
+/// The embedded terminal (erebor patch) below the file view and preview.
+fn terminal_split(preview_split: &gtk::Paned, browser: &BrowserView) -> gtk::Paned {
+    let cwd = browser
+        .browser()
+        .active_location()
+        .and_then(|location| location.native_path().map(std::path::Path::to_path_buf));
+    let pane = crate::ui::terminal_pane::pane(cwd);
+    pane.set_size_request(-1, TERMINAL_MIN_HEIGHT);
+    let split = gtk::Paned::new(gtk::Orientation::Vertical);
+    split.add_css_class("terminal-split");
+    split.set_wide_handle(true);
+    split.set_resize_start_child(true);
+    split.set_resize_end_child(false);
+    split.set_shrink_start_child(false);
+    split.set_shrink_end_child(false);
+    split.set_start_child(Some(preview_split));
+    split.set_end_child(Some(&pane));
+    split.set_vexpand(true);
+    split
+}
+
+const TERMINAL_MIN_HEIGHT: i32 = 220;
 
 fn bind_pin_handlers(browser: &BrowserView, sidebar: &SidebarView) {
     let weak_pin_sidebar = Rc::downgrade(&sidebar.state);

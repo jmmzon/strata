@@ -9,12 +9,14 @@
 
 use std::cell::{Cell, RefCell};
 use std::io;
-use std::os::fd::BorrowedFd;
+use std::os::fd::{BorrowedFd, OwnedFd};
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::rc::Rc;
 
 use libghostty_vt::Terminal;
+use libghostty_vt::color::{Palette, Rgb};
+use libghostty_vt::terminal::ScrollViewport;
 
 use crate::frame::{Frame, FrameBuilder};
 use crate::pty::Pty;
@@ -42,6 +44,23 @@ pub struct Events {
     pub pwd_changed: bool,
     pub title_changed: bool,
     pub bell: bool,
+}
+
+/// Default colors; `None` keeps libghostty's own.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DefaultColors {
+    pub foreground: Option<Rgb>,
+    pub background: Option<Rgb>,
+    pub cursor: Option<Rgb>,
+    pub palette: Option<Palette>,
+}
+
+/// The scrollable area and the viewport within it, in rows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Scrollbar {
+    pub total: u64,
+    pub offset: u64,
+    pub visible: u64,
 }
 
 #[derive(Default)]
@@ -108,6 +127,15 @@ impl Session {
     #[must_use]
     pub fn fd(&self) -> BorrowedFd<'_> {
         self.pty.fd()
+    }
+
+    /// A duplicate of the PTY master for an event loop to poll; reading and
+    /// writing still go through the session.
+    ///
+    /// # Errors
+    /// Fails when the descriptor cannot be duplicated.
+    pub fn poll_fd(&self) -> io::Result<OwnedFd> {
+        self.pty.fd().try_clone_to_owned()
     }
 
     /// Feeds waiting output into the terminal, then sends its replies.
@@ -208,6 +236,40 @@ impl Session {
         Ok((&self.frame, changed))
     }
 
+    /// Sets the colors programs get until they change them themselves.
+    ///
+    /// # Errors
+    /// Fails when libghostty rejects a value.
+    pub fn set_default_colors(&mut self, colors: &DefaultColors) -> Result<(), Error> {
+        self.terminal
+            .set_default_fg_color(colors.foreground)?
+            .set_default_bg_color(colors.background)?
+            .set_default_cursor_color(colors.cursor)?
+            .set_default_color_palette(colors.palette)?;
+        Ok(())
+    }
+
+    /// Moves the viewport through the scrollback.
+    ///
+    /// # Errors
+    /// Fails when libghostty rejects the request.
+    pub fn scroll(&mut self, scroll: ScrollViewport) -> Result<(), Error> {
+        Ok(self.terminal.scroll_viewport(scroll)?)
+    }
+
+    /// Where the viewport is within the scrollback, in rows.
+    #[must_use]
+    pub fn scrollbar(&self) -> Scrollbar {
+        self.terminal
+            .scrollbar()
+            .map(|bar| Scrollbar {
+                total: bar.total,
+                offset: bar.offset,
+                visible: bar.len,
+            })
+            .unwrap_or_default()
+    }
+
     pub fn take_events(&mut self) -> Events {
         Events {
             pwd_changed: self.shared.pwd_changed.take(),
@@ -233,6 +295,12 @@ impl Session {
             .title()
             .map(|title| String::from_utf8_lossy(title).into_owned())
             .unwrap_or_default()
+    }
+
+    /// The shell's process id.
+    #[must_use]
+    pub fn pid(&self) -> u32 {
+        self.pty.pid()
     }
 
     /// A program other than the shell owns the terminal.

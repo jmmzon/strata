@@ -183,3 +183,25 @@ policy, and real process reuse/replacement across browser views. Runtime checks
 use private headless displays/buses where needed. Changes to supervisor
 initialization must preserve these pre-fork invariants, not merely keep the
 task-count check.
+
+### Terminal PTY controlling terminal (erebor patch)
+
+Location: `crates/strata-term/src/pty.rs::Pty::spawn`
+
+Reason: a shell in the embedded terminal needs the PTY as its controlling
+terminal, or job control, `^C` and window-size signals do not reach it.
+`std::process::Command` offers no safe way to run `setsid` and the `TIOCSCTTY`
+ioctl between fork and exec, so the one unsafe operation is registering a
+`pre_exec` hook.
+
+The hook makes only those two rustix system calls: no allocation, locks or
+libc state, so it stays async-signal-safe in the forked child. std has already
+made the PTY slave the child's stdin when the hook runs, and the hook only
+borrows that descriptor. Errors abort the spawn through `io::Error`. The
+parent drops its slave descriptors right after spawning, so the master sees
+the hang-up when the shell exits.
+
+Coverage: the `strata-term` tests start real shells and check job control
+(a foreground `sleep` takes the terminal), resizes reaching `stty size`, and
+the exit status, and the pane's GTK test checks the shell is hung up when the
+pane is destroyed.

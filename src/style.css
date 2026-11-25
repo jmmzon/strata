@@ -7648,3 +7648,28 @@ popover.settings-action-library > contents {
 menubutton.sort-menu-button > button {
   color: @strata_text;
 }
+
+/* Embedded terminal (erebor patch). */
+.terminal-pane {
+  background: @strata_surface;
+  color: @strata_text;
+  border-top: 1px solid alpha(@strata_border, 0.6);
+}
+
+.terminal-pane terminal-view {
+  margin: 6px 4px 6px 10px;
+}
+
+.terminal-split > separator,
+.terminal-split > separator.wide {
+  background: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  min-height: 4px;
+  margin: 0 0 -4px 0;
+}
+
+.terminal-split > separator:hover {
+  background: alpha(@strata_accent, 0.4);
+}

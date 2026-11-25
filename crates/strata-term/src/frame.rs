@@ -36,8 +36,8 @@ pub struct FrameRow {
     pub runs: Vec<Run>,
 }
 
-/// Neighbouring cells that share one style. Blank cells with no background at
-/// the end of a row are left out.
+/// Neighbouring ASCII cells that share one style, or one non-ASCII cell.
+/// Blank cells with no background at the end of a row are left out.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Run {
     pub col: u16,
@@ -191,8 +191,10 @@ fn build_runs(
             text.clear();
             text.push(' ');
         }
+        // Non-ASCII cells get runs of their own so a fallback font's advance
+        // cannot push later cells off the grid.
         match runs.last_mut() {
-            Some(run) if run.style == style => {
+            Some(run) if run.style == style && text.is_ascii() && run.text.is_ascii() => {
                 run.cells += width;
                 run.text.push_str(text);
             }
