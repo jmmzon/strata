@@ -474,6 +474,7 @@ impl TabWindow {
                 |folder| format!("{folder} — Strata"),
             );
         window.set_title(Some(&title));
+        self.publish_folder();
     }
 
     fn refresh_chrome(&self) {
@@ -595,6 +596,67 @@ impl TabWindow {
             }
         });
         window.add_action(&open_window);
+
+        // Terminal sync (erebor patch): `sync-navigate` moves the active tab to a
+        // folder sent from outside; the application action forwards to the most
+        // recently focused window so a shell can call it through
+        // `gapplication action io.github.lgse.Strata sync-navigate "'file:///…'"`.
+        let sync = gio::SimpleAction::new("sync-navigate", Some(&String::static_variant_type()));
+        let weak = Rc::downgrade(self);
+        sync.connect_activate(move |_, parameter| {
+            if let (Some(state), Some(location)) = (weak.upgrade(), action_location(parameter)) {
+                let browser = state.active_browser();
+                if browser.browser().active_location().as_ref() != Some(&location) {
+                    browser.navigate_location(location);
+                }
+            }
+        });
+        window.add_action(&sync);
+        if let Some(application) = window.application()
+            && application.lookup_action("sync-navigate").is_none()
+        {
+            let forward =
+                gio::SimpleAction::new("sync-navigate", Some(&String::static_variant_type()));
+            let application_weak = application.downgrade();
+            forward.connect_activate(move |_, parameter| {
+                let Some(application) = application_weak.upgrade() else {
+                    return;
+                };
+                let target = application
+                    .active_window()
+                    .or_else(|| application.windows().into_iter().next());
+                if let Some(target) = target {
+                    let _ = target.activate_action("win.sync-navigate", parameter);
+                }
+            });
+            application.add_action(&forward);
+        }
+        let weak = Rc::downgrade(self);
+        window.connect_is_active_notify(move |_| {
+            if let Some(state) = weak.upgrade() {
+                state.publish_folder();
+            }
+        });
+    }
+
+    /// Terminal sync (erebor patch): while this window is focused, keep the
+    /// active tab's local folder in `$XDG_RUNTIME_DIR/strata/active-folder` for
+    /// a paired terminal to follow.
+    fn publish_folder(&self) {
+        let Some(window) = self.window.upgrade() else {
+            return;
+        };
+        if !window.is_active() {
+            return;
+        }
+        let Some(path) = self
+            .active_tab()
+            .location()
+            .and_then(|location| location.native_path().map(std::path::Path::to_path_buf))
+        else {
+            return;
+        };
+        publish_active_folder(&path);
     }
 
     fn cycle(&self, delta: i32) {
@@ -834,6 +896,31 @@ fn tab_number(press: &KeyPress) -> Option<u8> {
         return None;
     }
     press.digit_in(TAB_NUMBERS)
+}
+
+/// Writes the folder atomically, and only when it changed.
+fn publish_active_folder(path: &std::path::Path) {
+    thread_local! {
+        static LAST: RefCell<Option<std::path::PathBuf>> = const { RefCell::new(None) };
+    }
+    if LAST.with_borrow(|last| last.as_deref() == Some(path)) {
+        return;
+    }
+    let directory = glib::user_runtime_dir().join("strata");
+    let target = directory.join("active-folder");
+    let temporary = directory.join(".active-folder.tmp");
+    let written = std::fs::create_dir_all(&directory)
+        .and_then(|()| {
+            std::fs::write(
+                &temporary,
+                format!("{}\n", path.as_os_str().to_string_lossy()),
+            )
+        })
+        .and_then(|()| std::fs::rename(&temporary, &target));
+    match written {
+        Ok(()) => LAST.set(Some(path.to_path_buf())),
+        Err(error) => tracing::debug!("could not publish the active folder: {error}"),
+    }
 }
 
 fn action_location(parameter: Option<&glib::Variant>) -> Option<Location> {
