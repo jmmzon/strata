@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use gtk::{gdk, glib, prelude::*};
+use gtk::{gdk, gio, glib, prelude::*};
 
 use crate::ui::{browser::FilterStatus, browser_modes::BrowserMode};
 
@@ -59,6 +59,66 @@ pub(super) fn update_item_count(
         );
     }
     label.set_visible(true);
+    append_free_space(label, browser);
+}
+
+/// Free space (erebor patch): how long a folder's free-space reading is reused.
+const FREE_SPACE_TTL: std::time::Duration = std::time::Duration::from_secs(10);
+
+thread_local! {
+    static FREE_SPACE: RefCell<std::collections::HashMap<std::path::PathBuf, (u64, std::time::Instant)>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+/// Appends "· N free" for the active folder's filesystem to the count label.
+/// The reading is cached briefly and fetched asynchronously, so a slow mount
+/// never blocks the interface; a late reading is dropped when the label has
+/// moved on to other text.
+fn append_free_space(label: &gtk::Label, browser: &crate::app::Browser) {
+    let Some(path) = browser
+        .active_location()
+        .and_then(|location| location.native_path().map(std::path::Path::to_path_buf))
+    else {
+        return;
+    };
+    let base = label.label().to_string();
+    let cached = FREE_SPACE.with_borrow(|cache| {
+        cache
+            .get(&path)
+            .filter(|(_, read)| read.elapsed() < FREE_SPACE_TTL)
+            .map(|(free, _)| *free)
+    });
+    if let Some(free) = cached {
+        label.set_label(&free_space_text(&base, free));
+        return;
+    }
+    let weak = label.downgrade();
+    gio::File::for_path(&path).query_filesystem_info_async(
+        gio::FILE_ATTRIBUTE_FILESYSTEM_FREE,
+        glib::Priority::LOW,
+        gio::Cancellable::NONE,
+        move |result| {
+            let Ok(info) = result else {
+                return;
+            };
+            if !info.has_attribute(gio::FILE_ATTRIBUTE_FILESYSTEM_FREE) {
+                return;
+            }
+            let free = info.attribute_uint64(gio::FILE_ATTRIBUTE_FILESYSTEM_FREE);
+            FREE_SPACE.with_borrow_mut(|cache| {
+                cache.insert(path, (free, std::time::Instant::now()));
+            });
+            if let Some(label) = weak.upgrade()
+                && label.label().as_str() == base
+            {
+                label.set_label(&free_space_text(&base, free));
+            }
+        },
+    );
+}
+
+fn free_space_text(base: &str, free: u64) -> String {
+    format!("{base} · {} free", glib::format_size(free))
 }
 
 fn lacks_metadata(entry: &crate::model::FileEntry) -> bool {
