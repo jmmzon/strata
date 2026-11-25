@@ -22,6 +22,9 @@
   coreutils,
   xdg-utils,
   adwaita-icon-theme,
+  # Ghostty's VT engine for the embedded terminal, linked statically through
+  # its pkg-config file. Build it from the Ghostty source the bindings pin.
+  libghostty-vt,
   rarSupport ? false,
   buildCommit ? null,
 }:
@@ -71,7 +74,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
       ./THIRD_PARTY_LICENSES.md
     ];
   };
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes."libghostty-vt-0.2.1" = "sha256-Wl/JOS2KD/s+fiUz5W2bgXt07gLhwWO9MkPWik/9/gs=";
+  };
   buildNoDefaultFeatures = !rarSupport;
 
   nativeBuildInputs = [
@@ -81,6 +87,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   ];
   buildInputs = [
     gtk4
+    libghostty-vt
     gtksourceview5
     poppler
     fontconfig

@@ -67,6 +67,7 @@ zip = "9.0.4"
 zstd = "0.14.3"
 
 strata-core = { version = "0.0.0", path = "crates/strata-core", default-features = false }
+strata-term = { version = "0.0.0", path = "crates/strata-term" }
 strata-desktop = { version = "0.0.0", path = "crates/strata-desktop" }
 strata-fs = { version = "0.0.0", path = "crates/strata-fs", default-features = false }
 strata-preview = { version = "0.0.0", path = "crates/strata-preview", default-features = false }
@@ -114,6 +115,7 @@ test-support = [
 
 [dependencies]
 strata-core.workspace = true
+strata-term.workspace = true
 strata-desktop.workspace = true
 strata-fs.workspace = true
 strata-preview.workspace = true
